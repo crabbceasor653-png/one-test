@@ -30,6 +30,7 @@ interface TopBarProps {
   onDeleteSelectedElements: () => void;
   onDuplicateSelectedElements: () => void;
   onExportPng: () => void;
+  onToggleSelectedElementLock: () => void;
 }
 
 export function TopBar({
@@ -39,6 +40,7 @@ export function TopBar({
   onDeleteSelectedElements,
   onDuplicateSelectedElements,
   onExportPng,
+  onToggleSelectedElementLock,
 }: TopBarProps) {
   const selectedCountLabel = selectedCount > 1 ? `多选(${selectedCount})` : `已放置(${elementCount})`;
 
@@ -64,7 +66,7 @@ export function TopBar({
         <button aria-label="复制" disabled={selectedCount === 0} onClick={onDuplicateSelectedElements}>
           <Copy size={18} />
         </button>
-        <button aria-label="锁定">
+        <button aria-label="锁定" disabled={selectedCount === 0} onClick={onToggleSelectedElementLock}>
           <Lock size={18} />
         </button>
         <button aria-label="删除" disabled={selectedCount === 0} onClick={onDeleteSelectedElements}>

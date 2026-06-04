@@ -58,9 +58,13 @@ function CanvasImage({
         height={element.height}
         rotation={element.rotation}
         opacity={element.opacity}
-        draggable
+        draggable={!element.locked}
         onClick={(event) => onSelect(event.evt.shiftKey)}
         onDragEnd={(event) => {
+          if (element.locked) {
+            return;
+          }
+
           onChange({
             x: Math.round(event.target.x()),
             y: Math.round(event.target.y()),
@@ -68,6 +72,10 @@ function CanvasImage({
         }}
         onTap={() => onSelect(false)}
         onTransformEnd={() => {
+          if (element.locked) {
+            return;
+          }
+
           const node = imageRef.current;
 
           if (!node) {
@@ -91,7 +99,7 @@ function CanvasImage({
           });
         }}
       />
-      {isSelected && (
+      {isSelected && !element.locked && (
         <Transformer
           ref={transformerRef}
           enabledAnchors={["top-left", "top-right", "bottom-left", "bottom-right"]}

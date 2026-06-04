@@ -133,6 +133,7 @@ export default function App() {
       height,
       rotation: 0,
       opacity: 1,
+      locked: false,
     };
 
     setElements((currentElements) => [...currentElements, element]);
@@ -159,7 +160,36 @@ export default function App() {
 
   function handleUpdateElement(id: string, patch: Partial<CollageElement>) {
     setElements((currentElements) =>
-      currentElements.map((element) => (element.id === id ? { ...element, ...patch } : element)),
+      currentElements.map((element) => {
+        if (element.id !== id) {
+          return element;
+        }
+
+        if (element.locked) {
+          return element;
+        }
+
+        return { ...element, ...patch };
+      }),
+    );
+  }
+
+  function handleToggleElementLock(id: string) {
+    setElements((currentElements) =>
+      currentElements.map((element) => (element.id === id ? { ...element, locked: !element.locked } : element)),
+    );
+  }
+
+  function handleToggleSelectedElementLock() {
+    if (selectedElementIds.length === 0) {
+      return;
+    }
+
+    const selectedSet = new Set(selectedElementIds);
+    const shouldLock = elements.some((element) => selectedSet.has(element.id) && !element.locked);
+
+    setElements((currentElements) =>
+      currentElements.map((element) => (selectedSet.has(element.id) ? { ...element, locked: shouldLock } : element)),
     );
   }
 
@@ -167,7 +197,7 @@ export default function App() {
     setElements((currentElements) => {
       const target = currentElements.find((element) => element.id === id);
 
-      if (!target || target.layer === layer) {
+      if (!target || target.locked || target.layer === layer) {
         return currentElements;
       }
 
@@ -180,7 +210,10 @@ export default function App() {
   }
 
   function handleMoveElementZ(id: string, action: ZOrderAction) {
-    setElements((currentElements) => reorderLayer(currentElements, id, action));
+    setElements((currentElements) => {
+      const target = currentElements.find((element) => element.id === id);
+      return target?.locked ? currentElements : reorderLayer(currentElements, id, action);
+    });
   }
 
   function handleDuplicateSelectedElements() {
@@ -189,9 +222,10 @@ export default function App() {
     }
 
     const selectedSet = new Set(selectedElementIds);
-    const selectedElements = elements.filter((element) => selectedSet.has(element.id));
+    const selectedElements = elements.filter((element) => selectedSet.has(element.id) && !element.locked);
 
     if (selectedElements.length === 0) {
+      showNotice("选中的元素已锁定，请先解锁后再复制。");
       return;
     }
 
@@ -221,8 +255,18 @@ export default function App() {
 
     const selectedSet = new Set(selectedElementIds);
 
-    setElements((currentElements) => currentElements.filter((element) => !selectedSet.has(element.id)));
-    setSelectedElementIds([]);
+    const lockedSelectedIds = elements
+      .filter((element) => selectedSet.has(element.id) && element.locked)
+      .map((element) => element.id);
+
+    setElements((currentElements) =>
+      currentElements.filter((element) => !selectedSet.has(element.id) || element.locked),
+    );
+    setSelectedElementIds(lockedSelectedIds);
+
+    if (lockedSelectedIds.length > 0) {
+      showNotice("部分元素已锁定，未被删除。");
+    }
   }
 
   useEffect(() => {
@@ -289,6 +333,7 @@ export default function App() {
         onDeleteSelectedElements={handleDeleteSelectedElements}
         onDuplicateSelectedElements={handleDuplicateSelectedElements}
         onExportPng={handleExportPng}
+        onToggleSelectedElementLock={handleToggleSelectedElementLock}
       />
       <div className="editor-body">
         <AssetPanel
@@ -314,6 +359,7 @@ export default function App() {
           onDuplicateSelectedElements={handleDuplicateSelectedElements}
           onMoveElementZ={handleMoveElementZ}
           onSelectElement={handleSelectElement}
+          onToggleElementLock={handleToggleElementLock}
           onUpdateElement={handleUpdateElement}
         />
       </div>
@@ -325,6 +371,7 @@ export default function App() {
       <StatusBar
         background={canvasBackground}
         selectedElementId={selectedElementId}
+        selectedElementLocked={selectedElement?.locked ?? false}
         onChangeBackground={setCanvasBackground}
         onMoveElementZ={handleMoveElementZ}
       />

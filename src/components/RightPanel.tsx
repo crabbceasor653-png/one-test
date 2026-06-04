@@ -5,7 +5,6 @@ import {
   Info,
   Layers,
   Lock,
-  MoreVertical,
   Move3D,
   Plus,
   SendToBack,
@@ -33,6 +32,7 @@ interface RightPanelProps {
   onDuplicateSelectedElements: () => void;
   onMoveElementZ: (id: string, action: ZOrderAction) => void;
   onSelectElement: (id: string, additive?: boolean) => void;
+  onToggleElementLock: (id: string) => void;
   onUpdateElement: (id: string, patch: Partial<CollageElement>) => void;
 }
 
@@ -45,13 +45,15 @@ export function RightPanel({
   onDuplicateSelectedElements,
   onMoveElementZ,
   onSelectElement,
+  onToggleElementLock,
   onUpdateElement,
 }: RightPanelProps) {
   const selectedOpacity = selectedElement ? Math.round(selectedElement.opacity * 100) : 100;
+  const selectedLocked = selectedElement?.locked ?? false;
   const selectedSet = new Set(selectedElementIds);
 
   function patchSelected(patch: Partial<CollageElement>) {
-    if (!selectedElement) {
+    if (!selectedElement || selectedElement.locked) {
       return;
     }
 
@@ -59,7 +61,7 @@ export function RightPanel({
   }
 
   function moveSelected(action: ZOrderAction) {
-    if (!selectedElement) {
+    if (!selectedElement || selectedElement.locked) {
       return;
     }
 
@@ -80,40 +82,51 @@ export function RightPanel({
             </button>
           </div>
         </div>
-        {layerGroups.map((group) => {
-          const groupElements = elements
-            .filter((element) => element.layer === group.key)
-            .sort((a, b) => b.zIndex - a.zIndex);
+        <div className="layer-list" aria-label="图层列表">
+          {layerGroups.map((group) => {
+            const groupElements = elements
+              .filter((element) => element.layer === group.key)
+              .sort((a, b) => b.zIndex - a.zIndex);
 
-          return (
-          <div className="layer-group" key={group.key}>
-            <div className="layer-group-title">
-              <ChevronDown size={16} />
-              <span className="dot" />
-              <strong>
-                {group.name} ({groupElements.length})
-              </strong>
-              <small>{groupElements.length}</small>
-            </div>
-            {groupElements.length === 0 && <div className="layer-empty">暂无元素</div>}
-            {groupElements.map((item) => (
-              <button
-                className={selectedSet.has(item.id) ? "layer-row active" : "layer-row"}
-                key={item.id}
-                onClick={(event) => onSelectElement(item.id, event.shiftKey)}
-              >
-                <Eye size={16} />
-                <span className="thumb-image">
-                  <img src={item.src} alt="" />
-                </span>
-                <span className="layer-name">{item.name}</span>
-                <span className="opacity">{Math.round(item.opacity * 100)}%</span>
-                {selectedSet.has(item.id) ? <Lock size={14} /> : <MoreVertical size={16} />}
-              </button>
-            ))}
-          </div>
-        );
-        })}
+            return (
+              <div className="layer-group" key={group.key}>
+                <div className="layer-group-title">
+                  <ChevronDown size={16} />
+                  <span className="dot" />
+                  <strong>
+                    {group.name} ({groupElements.length})
+                  </strong>
+                  <small>{groupElements.length}</small>
+                </div>
+                {groupElements.length === 0 && <div className="layer-empty">暂无元素</div>}
+                {groupElements.map((item) => (
+                  <div
+                    className={selectedSet.has(item.id) ? "layer-row active" : "layer-row"}
+                    key={item.id}
+                  >
+                    <button className="layer-row-main" onClick={(event) => onSelectElement(item.id, event.shiftKey)}>
+                      <Eye size={16} />
+                      <span className="thumb-image">
+                        <img src={item.src} alt="" />
+                      </span>
+                      <span className="layer-name">{item.name}</span>
+                      <span className="opacity">{Math.round(item.opacity * 100)}%</span>
+                    </button>
+                    <button
+                      aria-label={item.locked ? "解锁图层" : "锁定图层"}
+                      className={item.locked ? "layer-lock-button locked" : "layer-lock-button"}
+                      onClick={() => onToggleElementLock(item.id)}
+                      title={item.locked ? "解锁图层" : "锁定图层"}
+                      type="button"
+                    >
+                      <Lock size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
       </section>
       <section className="panel property-panel">
         <div className="panel-title">
@@ -138,6 +151,7 @@ export function RightPanel({
               <div>
                 <strong>{selectedElement.name}</strong>
                 <span>
+                  {selectedElement.locked ? "已锁定 · " : ""}
                   {selectedElementIds.length > 1 ? `已选择 ${selectedElementIds.length} 个元素 · ` : ""}
                   {selectedElement.layer === "middle" ? "中景层" : selectedElement.layer === "foreground" ? "前景层" : "背景层"}
                 </span>
@@ -154,6 +168,7 @@ export function RightPanel({
             <label className="select-field">
               <span>图层</span>
               <select
+                disabled={selectedLocked}
                 value={selectedElement.layer}
                 onChange={(event) => onChangeElementLayer(selectedElement.id, event.target.value as SceneLayer)}
               >
@@ -165,19 +180,19 @@ export function RightPanel({
               </select>
             </label>
             <div className="z-order-actions">
-              <button aria-label="置于顶层" onClick={() => moveSelected("front")}>
+              <button aria-label="置于顶层" disabled={selectedLocked} onClick={() => moveSelected("front")}>
                 <BringToFront size={16} />
                 <span>置顶</span>
               </button>
-              <button aria-label="上移一层" onClick={() => moveSelected("up")}>
+              <button aria-label="上移一层" disabled={selectedLocked} onClick={() => moveSelected("up")}>
                 <Layers size={16} />
                 <span>上移</span>
               </button>
-              <button aria-label="下移一层" onClick={() => moveSelected("down")}>
+              <button aria-label="下移一层" disabled={selectedLocked} onClick={() => moveSelected("down")}>
                 <Layers size={16} />
                 <span>下移</span>
               </button>
-              <button aria-label="置于底层" onClick={() => moveSelected("back")}>
+              <button aria-label="置于底层" disabled={selectedLocked} onClick={() => moveSelected("back")}>
                 <SendToBack size={16} />
                 <span>置底</span>
               </button>
@@ -189,6 +204,7 @@ export function RightPanel({
                   type="range"
                   min="0"
                   max="100"
+                  disabled={selectedLocked}
                   value={selectedOpacity}
                   onChange={(event) => patchSelected({ opacity: Number(event.target.value) / 100 })}
                 />
@@ -197,7 +213,7 @@ export function RightPanel({
             </label>
             <label className="select-field">
               <span>混合模式</span>
-              <select defaultValue="normal">
+              <select defaultValue="normal" disabled={selectedLocked}>
                 <option value="normal">正常</option>
                 <option value="multiply">正片叠底</option>
               </select>
@@ -211,6 +227,7 @@ export function RightPanel({
                 <span>X</span>
                 <input
                   type="number"
+                  disabled={selectedLocked}
                   value={Math.round(selectedElement.x)}
                   onChange={(event) => patchSelected({ x: toNumber(event.target.value, selectedElement.x) })}
                 />
@@ -219,6 +236,7 @@ export function RightPanel({
                 <span>Y</span>
                 <input
                   type="number"
+                  disabled={selectedLocked}
                   value={Math.round(selectedElement.y)}
                   onChange={(event) => patchSelected({ y: toNumber(event.target.value, selectedElement.y) })}
                 />
@@ -228,6 +246,7 @@ export function RightPanel({
                 <input
                   type="number"
                   min="32"
+                  disabled={selectedLocked}
                   value={Math.round(selectedElement.width)}
                   onChange={(event) =>
                     patchSelected({ width: Math.max(32, toNumber(event.target.value, selectedElement.width)) })
@@ -239,6 +258,7 @@ export function RightPanel({
                 <input
                   type="number"
                   min="32"
+                  disabled={selectedLocked}
                   value={Math.round(selectedElement.height)}
                   onChange={(event) =>
                     patchSelected({ height: Math.max(32, toNumber(event.target.value, selectedElement.height)) })
@@ -249,6 +269,7 @@ export function RightPanel({
                 <span>旋转</span>
                 <input
                   type="number"
+                  disabled={selectedLocked}
                   value={Math.round(selectedElement.rotation)}
                   onChange={(event) => patchSelected({ rotation: toNumber(event.target.value, selectedElement.rotation) })}
                 />
@@ -259,6 +280,7 @@ export function RightPanel({
                   type="number"
                   min="0"
                   max="100"
+                  disabled={selectedLocked}
                   value={selectedOpacity}
                   onChange={(event) =>
                     patchSelected({ opacity: Math.min(1, Math.max(0, toNumber(event.target.value, selectedOpacity) / 100)) })

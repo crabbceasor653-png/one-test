@@ -4,6 +4,7 @@ import type { CanvasBackground, CanvasBackgroundMode, ZOrderAction } from "../ty
 interface StatusBarProps {
   background: CanvasBackground;
   selectedElementId: string | null;
+  selectedElementLocked: boolean;
   onChangeBackground: (background: CanvasBackground) => void;
   onMoveElementZ: (id: string, action: ZOrderAction) => void;
 }
@@ -14,13 +15,19 @@ const backgroundModes: Array<{ label: string; mode: CanvasBackgroundMode }> = [
   { label: "自定义", mode: "custom" },
 ];
 
-export function StatusBar({ background, selectedElementId, onChangeBackground, onMoveElementZ }: StatusBarProps) {
+export function StatusBar({
+  background,
+  selectedElementId,
+  selectedElementLocked,
+  onChangeBackground,
+  onMoveElementZ,
+}: StatusBarProps) {
   function changeBackgroundMode(mode: CanvasBackgroundMode) {
     onChangeBackground({ ...background, mode });
   }
 
   function moveSelected(action: ZOrderAction) {
-    if (!selectedElementId) {
+    if (!selectedElementId || selectedElementLocked) {
       return;
     }
 
@@ -63,19 +70,19 @@ export function StatusBar({ background, selectedElementId, onChangeBackground, o
         />
       </div>
       <div className="status-layer-actions" aria-label="图层顺序">
-        <button disabled={!selectedElementId} onClick={() => moveSelected("front")} type="button">
+        <button disabled={!selectedElementId || selectedElementLocked} onClick={() => moveSelected("front")} type="button">
           <BringToFront size={18} />
           <span>置于顶层</span>
         </button>
-        <button disabled={!selectedElementId} onClick={() => moveSelected("up")} type="button">
+        <button disabled={!selectedElementId || selectedElementLocked} onClick={() => moveSelected("up")} type="button">
           <Layers size={18} />
           <span>上移一层</span>
         </button>
-        <button disabled={!selectedElementId} onClick={() => moveSelected("down")} type="button">
+        <button disabled={!selectedElementId || selectedElementLocked} onClick={() => moveSelected("down")} type="button">
           <Layers size={18} />
           <span>下移一层</span>
         </button>
-        <button disabled={!selectedElementId} onClick={() => moveSelected("back")} type="button">
+        <button disabled={!selectedElementId || selectedElementLocked} onClick={() => moveSelected("back")} type="button">
           <SendToBack size={18} />
           <span>置于底层</span>
         </button>

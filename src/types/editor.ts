@@ -29,6 +29,7 @@ export interface CollageElement {
   height: number;
   rotation: number;
   opacity: number;
+  locked: boolean;
 }
 
 export interface MockAsset {
