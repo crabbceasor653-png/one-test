@@ -65,20 +65,138 @@ function reorderLayer(elements: CollageElement[], targetId: string, action: ZOrd
   });
 }
 
+interface EditorSnapshot {
+  canvasBackground: CanvasBackground;
+  elements: CollageElement[];
+  selectedElementIds: string[];
+}
+
+const historyLimit = 80;
+const initialCanvasBackground: CanvasBackground = {
+  color: "#ffffff",
+  mode: "transparent",
+};
+
+function areStringArraysEqual(first: string[], second: string[]) {
+  return first.length === second.length && first.every((item, index) => item === second[index]);
+}
+
+function areEditorSnapshotsEqual(first: EditorSnapshot, second: EditorSnapshot) {
+  return (
+    first.elements === second.elements &&
+    first.canvasBackground.color === second.canvasBackground.color &&
+    first.canvasBackground.mode === second.canvasBackground.mode &&
+    areStringArraysEqual(first.selectedElementIds, second.selectedElementIds)
+  );
+}
+
 export default function App() {
   const [assets, setAssets] = useState<AssetItem[]>([]);
   const [elements, setElements] = useState<CollageElement[]>([]);
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
-  const [canvasBackground, setCanvasBackground] = useState<CanvasBackground>({
-    color: "#ffffff",
-    mode: "transparent",
-  });
+  const [canvasBackground, setCanvasBackground] = useState<CanvasBackground>(initialCanvasBackground);
   const [isExporting, setIsExporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [rejectedAssetCount, setRejectedAssetCount] = useState(0);
+  const [historyAvailability, setHistoryAvailability] = useState({
+    canRedo: false,
+    canUndo: false,
+  });
+  const editorStateRef = useRef<EditorSnapshot>({
+    canvasBackground: initialCanvasBackground,
+    elements: [],
+    selectedElementIds: [],
+  });
+  const historyRef = useRef<{ future: EditorSnapshot[]; past: EditorSnapshot[] }>({
+    future: [],
+    past: [],
+  });
   const noticeTimerRef = useRef<number | null>(null);
   const selectedElementId = selectedElementIds[selectedElementIds.length - 1] ?? null;
   const selectedElement = elements.find((element) => element.id === selectedElementId) ?? null;
+
+  function updateHistoryAvailability() {
+    const { future, past } = historyRef.current;
+    setHistoryAvailability({
+      canRedo: future.length > 0,
+      canUndo: past.length > 0,
+    });
+  }
+
+  function restoreEditorSnapshot(snapshot: EditorSnapshot) {
+    editorStateRef.current = snapshot;
+    setElements(snapshot.elements);
+    setCanvasBackground(snapshot.canvasBackground);
+    setSelectedElementIds(snapshot.selectedElementIds);
+  }
+
+  function commitEditorState(updater: (snapshot: EditorSnapshot) => EditorSnapshot) {
+    const previousSnapshot = editorStateRef.current;
+    const nextSnapshot = updater(previousSnapshot);
+
+    if (areEditorSnapshotsEqual(previousSnapshot, nextSnapshot)) {
+      return;
+    }
+
+    const nextPast = [...historyRef.current.past, previousSnapshot].slice(-historyLimit);
+    historyRef.current = {
+      future: [],
+      past: nextPast,
+    };
+    updateHistoryAvailability();
+
+    restoreEditorSnapshot(nextSnapshot);
+  }
+
+  function updateSelectedElementIds(updater: (currentIds: string[]) => string[]) {
+    setSelectedElementIds((currentIds) => {
+      const nextIds = updater(currentIds);
+      editorStateRef.current = {
+        ...editorStateRef.current,
+        selectedElementIds: nextIds,
+      };
+      return nextIds;
+    });
+  }
+
+  function handleUndo() {
+    const { future, past } = historyRef.current;
+    const previousSnapshot = past[past.length - 1];
+
+    if (!previousSnapshot) {
+      return;
+    }
+
+    historyRef.current = {
+      future: [editorStateRef.current, ...future],
+      past: past.slice(0, -1),
+    };
+    updateHistoryAvailability();
+    restoreEditorSnapshot(previousSnapshot);
+  }
+
+  function handleRedo() {
+    const { future, past } = historyRef.current;
+    const nextSnapshot = future[0];
+
+    if (!nextSnapshot) {
+      return;
+    }
+
+    historyRef.current = {
+      future: future.slice(1),
+      past: [...past, editorStateRef.current].slice(-historyLimit),
+    };
+    updateHistoryAvailability();
+    restoreEditorSnapshot(nextSnapshot);
+  }
+
+  function handleChangeCanvasBackground(nextBackground: CanvasBackground) {
+    commitEditorState((currentSnapshot) => ({
+      ...currentSnapshot,
+      canvasBackground: nextBackground,
+    }));
+  }
 
   async function handleAssetUpload(files: FileList | File[]) {
     const fileList = Array.from(files);
@@ -117,31 +235,36 @@ export default function App() {
     const ratio = Math.min(maxDisplaySize / asset.width, maxDisplaySize / asset.height, 1);
     const width = Math.max(48, Math.round(asset.width * ratio));
     const height = Math.max(48, Math.round(asset.height * ratio));
-    const offset = (elements.length % 6) * 80;
     const id = crypto.randomUUID();
 
-    const element: CollageElement = {
-      id,
-      assetId: asset.id,
-      name: asset.name,
-      src: asset.src,
-      layer: "middle",
-      zIndex: elements.length,
-      x: canvasSize.width / 2 - width / 2 + offset,
-      y: canvasSize.height / 2 - height / 2 + offset,
-      width,
-      height,
-      rotation: 0,
-      opacity: 1,
-      locked: false,
-    };
+    commitEditorState((currentSnapshot) => {
+      const offset = (currentSnapshot.elements.length % 6) * 80;
+      const element: CollageElement = {
+        id,
+        assetId: asset.id,
+        name: asset.name,
+        src: asset.src,
+        layer: "middle",
+        zIndex: currentSnapshot.elements.length,
+        x: canvasSize.width / 2 - width / 2 + offset,
+        y: canvasSize.height / 2 - height / 2 + offset,
+        width,
+        height,
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+      };
 
-    setElements((currentElements) => [...currentElements, element]);
-    setSelectedElementIds([id]);
+      return {
+        ...currentSnapshot,
+        elements: [...currentSnapshot.elements, element],
+        selectedElementIds: [id],
+      };
+    });
   }
 
   function handleSelectElement(id: string, additive = false) {
-    setSelectedElementIds((currentIds) => {
+    updateSelectedElementIds((currentIds) => {
       if (!additive) {
         return [id];
       }
@@ -155,29 +278,29 @@ export default function App() {
   }
 
   function handleClearSelection() {
-    setSelectedElementIds([]);
+    updateSelectedElementIds(() => []);
   }
 
   function handleUpdateElement(id: string, patch: Partial<CollageElement>) {
-    setElements((currentElements) =>
-      currentElements.map((element) => {
-        if (element.id !== id) {
-          return element;
-        }
-
-        if (element.locked) {
+    commitEditorState((currentSnapshot) => ({
+      ...currentSnapshot,
+      elements: currentSnapshot.elements.map((element) => {
+        if (element.id !== id || element.locked) {
           return element;
         }
 
         return { ...element, ...patch };
       }),
-    );
+    }));
   }
 
   function handleToggleElementLock(id: string) {
-    setElements((currentElements) =>
-      currentElements.map((element) => (element.id === id ? { ...element, locked: !element.locked } : element)),
-    );
+    commitEditorState((currentSnapshot) => ({
+      ...currentSnapshot,
+      elements: currentSnapshot.elements.map((element) =>
+        element.id === id ? { ...element, locked: !element.locked } : element,
+      ),
+    }));
   }
 
   function handleToggleSelectedElementLock() {
@@ -188,41 +311,57 @@ export default function App() {
     const selectedSet = new Set(selectedElementIds);
     const shouldLock = elements.some((element) => selectedSet.has(element.id) && !element.locked);
 
-    setElements((currentElements) =>
-      currentElements.map((element) => (selectedSet.has(element.id) ? { ...element, locked: shouldLock } : element)),
-    );
+    commitEditorState((currentSnapshot) => ({
+      ...currentSnapshot,
+      elements: currentSnapshot.elements.map((element) =>
+        selectedSet.has(element.id) ? { ...element, locked: shouldLock } : element,
+      ),
+    }));
   }
 
   function handleChangeElementLayer(id: string, layer: SceneLayer) {
-    setElements((currentElements) => {
-      const target = currentElements.find((element) => element.id === id);
+    commitEditorState((currentSnapshot) => {
+      const target = currentSnapshot.elements.find((element) => element.id === id);
 
       if (!target || target.locked || target.layer === layer) {
-        return currentElements;
+        return currentSnapshot;
       }
 
-      const nextZIndex = getNextLayerZIndex(currentElements, layer);
+      const nextZIndex = getNextLayerZIndex(currentSnapshot.elements, layer);
 
-      return currentElements.map((element) =>
-        element.id === id ? { ...element, layer, zIndex: nextZIndex } : element,
-      );
+      return {
+        ...currentSnapshot,
+        elements: currentSnapshot.elements.map((element) =>
+          element.id === id ? { ...element, layer, zIndex: nextZIndex } : element,
+        ),
+      };
     });
   }
 
   function handleMoveElementZ(id: string, action: ZOrderAction) {
-    setElements((currentElements) => {
-      const target = currentElements.find((element) => element.id === id);
-      return target?.locked ? currentElements : reorderLayer(currentElements, id, action);
+    commitEditorState((currentSnapshot) => {
+      const target = currentSnapshot.elements.find((element) => element.id === id);
+
+      if (target?.locked) {
+        return currentSnapshot;
+      }
+
+      return {
+        ...currentSnapshot,
+        elements: reorderLayer(currentSnapshot.elements, id, action),
+      };
     });
   }
 
   function handleDuplicateSelectedElements() {
-    if (selectedElementIds.length === 0) {
+    const currentSnapshot = editorStateRef.current;
+
+    if (currentSnapshot.selectedElementIds.length === 0) {
       return;
     }
 
-    const selectedSet = new Set(selectedElementIds);
-    const selectedElements = elements.filter((element) => selectedSet.has(element.id) && !element.locked);
+    const selectedSet = new Set(currentSnapshot.selectedElementIds);
+    const selectedElements = currentSnapshot.elements.filter((element) => selectedSet.has(element.id) && !element.locked);
 
     if (selectedElements.length === 0) {
       showNotice("选中的元素已锁定，请先解锁后再复制。");
@@ -231,7 +370,7 @@ export default function App() {
 
     const nextLayerIndexes = new Map<SceneLayer, number>();
     const duplicatedElements = selectedElements.map((element) => {
-      const nextZIndex = nextLayerIndexes.get(element.layer) ?? getNextLayerZIndex(elements, element.layer);
+      const nextZIndex = nextLayerIndexes.get(element.layer) ?? getNextLayerZIndex(currentSnapshot.elements, element.layer);
       nextLayerIndexes.set(element.layer, nextZIndex + 1);
 
       return {
@@ -244,25 +383,34 @@ export default function App() {
       };
     });
 
-    setElements((currentElements) => [...currentElements, ...duplicatedElements]);
-    setSelectedElementIds(duplicatedElements.map((element) => element.id));
+    commitEditorState((snapshot) => ({
+      ...snapshot,
+      elements: [...snapshot.elements, ...duplicatedElements],
+      selectedElementIds: duplicatedElements.map((element) => element.id),
+    }));
   }
 
   function handleDeleteSelectedElements() {
-    if (selectedElementIds.length === 0) {
+    const currentSnapshot = editorStateRef.current;
+
+    if (currentSnapshot.selectedElementIds.length === 0) {
       return;
     }
 
-    const selectedSet = new Set(selectedElementIds);
+    const selectedSet = new Set(currentSnapshot.selectedElementIds);
 
-    const lockedSelectedIds = elements
+    const lockedSelectedIds = currentSnapshot.elements
       .filter((element) => selectedSet.has(element.id) && element.locked)
       .map((element) => element.id);
+    const nextElements = currentSnapshot.elements.filter((element) => !selectedSet.has(element.id) || element.locked);
 
-    setElements((currentElements) =>
-      currentElements.filter((element) => !selectedSet.has(element.id) || element.locked),
-    );
-    setSelectedElementIds(lockedSelectedIds);
+    if (nextElements.length !== currentSnapshot.elements.length) {
+      commitEditorState((snapshot) => ({
+        ...snapshot,
+        elements: snapshot.elements.filter((element) => !selectedSet.has(element.id) || element.locked),
+        selectedElementIds: lockedSelectedIds,
+      }));
+    }
 
     if (lockedSelectedIds.length > 0) {
       showNotice("部分元素已锁定，未被删除。");
@@ -272,6 +420,23 @@ export default function App() {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (isEditingFormField(event.target)) {
+        return;
+      }
+
+      const isUndo = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !event.shiftKey;
+      const isRedo =
+        ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") ||
+        ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "z");
+
+      if (isUndo) {
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if (isRedo) {
+        event.preventDefault();
+        handleRedo();
         return;
       }
 
@@ -327,13 +492,17 @@ export default function App() {
   return (
     <div className="app-shell">
       <TopBar
+        canRedo={historyAvailability.canRedo}
+        canUndo={historyAvailability.canUndo}
         elementCount={elements.length}
         isExporting={isExporting}
         selectedCount={selectedElementIds.length}
         onDeleteSelectedElements={handleDeleteSelectedElements}
         onDuplicateSelectedElements={handleDuplicateSelectedElements}
         onExportPng={handleExportPng}
+        onRedo={handleRedo}
         onToggleSelectedElementLock={handleToggleSelectedElementLock}
+        onUndo={handleUndo}
       />
       <div className="editor-body">
         <AssetPanel
@@ -372,7 +541,7 @@ export default function App() {
         background={canvasBackground}
         selectedElementId={selectedElementId}
         selectedElementLocked={selectedElement?.locked ?? false}
-        onChangeBackground={setCanvasBackground}
+        onChangeBackground={handleChangeCanvasBackground}
         onMoveElementZ={handleMoveElementZ}
       />
     </div>

@@ -12,6 +12,8 @@ import {
   SlidersHorizontal,
   Sun,
   Trash2,
+  Redo2,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -24,23 +26,31 @@ const tools = [
 ];
 
 interface TopBarProps {
+  canRedo: boolean;
+  canUndo: boolean;
   elementCount: number;
   isExporting: boolean;
   selectedCount: number;
   onDeleteSelectedElements: () => void;
   onDuplicateSelectedElements: () => void;
   onExportPng: () => void;
+  onRedo: () => void;
   onToggleSelectedElementLock: () => void;
+  onUndo: () => void;
 }
 
 export function TopBar({
+  canRedo,
+  canUndo,
   elementCount,
   isExporting,
   selectedCount,
   onDeleteSelectedElements,
   onDuplicateSelectedElements,
   onExportPng,
+  onRedo,
   onToggleSelectedElementLock,
+  onUndo,
 }: TopBarProps) {
   const selectedCountLabel = selectedCount > 1 ? `多选(${selectedCount})` : `已放置(${elementCount})`;
 
@@ -57,6 +67,16 @@ export function TopBar({
           <h1>植被拼贴编辑器</h1>
           <p>创建自然 · 设计景观</p>
         </div>
+      </div>
+      <div className="top-history-actions" aria-label="历史操作">
+        <button aria-label="撤销" disabled={!canUndo} onClick={onUndo} title="撤销 Ctrl + Z">
+          <Undo2 size={18} />
+          <span>撤销</span>
+        </button>
+        <button aria-label="重做" disabled={!canRedo} onClick={onRedo} title="重做 Ctrl + Y">
+          <Redo2 size={18} />
+          <span>重做</span>
+        </button>
       </div>
       <div className="top-selection-actions">
         <strong>{selectedCountLabel}</strong>
